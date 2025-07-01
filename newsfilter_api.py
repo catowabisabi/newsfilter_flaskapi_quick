@@ -9,6 +9,7 @@ from seleniumwire import webdriver
 from selenium.webdriver.chrome.options import Options
 import time
 from bs4 import BeautifulSoup
+from lxml import etree
 
 
 
@@ -197,13 +198,62 @@ class NewsfilterApi:
 
             rendered_html = driver.page_source
                    
-            soup = BeautifulSoup(rendered_html, "html.parser")
-            article_div = soup.find("div", class_="col-lg-10 col-lg-offset-1")
-            paragraphs = article_div.find_all("p") if article_div else []
-            article_text = "\n\n".join([p.get_text(strip=True) for p in paragraphs])
-            driver.quit()
 
-            return article_text
+            
+            # BeautifulSoup 解析用於其他方法
+            soup = BeautifulSoup(rendered_html, "html.parser")
+            
+            # 方法2: 尋找特定 class 的 div 和其中的段落
+            article_div = soup.find("div", class_="col-lg-10 col-lg-offset-1")
+            if article_div:
+                paragraphs = article_div.find_all("p")
+                article_text = "\n\n".join([p.get_text(strip=True) for p in paragraphs])
+                if article_text.strip():
+                    driver.quit()
+                    return article_text
+            
+                        # 方法1: 使用 XPath 提取內容
+            try:
+                html_tree = etree.HTML(rendered_html)
+                content_elements = html_tree.xpath('//*[@id="root"]/div[2]/div[2]/div/div[1]/div')
+                if content_elements:
+                    article_text = content_elements[0].text_content().strip()
+                    if article_text:
+                        driver.quit()
+                        return article_text
+            except Exception as e:
+                print(f"XPath extraction failed: {e}")
+
+            # 方法3: 尋找 article 標籤
+            article_tag = soup.find("article")
+            if article_tag:
+                paragraphs = article_tag.find_all("p")
+                article_text = "\n\n".join([p.get_text(strip=True) for p in paragraphs])
+                if article_text.strip():
+                    driver.quit()
+                    return article_text
+
+            # 方法4: 尋找帶有 article 或 content 相關 class 的 div
+            content_divs = soup.find_all("div", class_=lambda x: x and ('article' in x.lower() or 'content' in x.lower()))
+            for div in content_divs:
+                paragraphs = div.find_all("p")
+                article_text = "\n\n".join([p.get_text(strip=True) for p in paragraphs])
+                if article_text.strip():
+                    driver.quit()
+                    return article_text
+
+            # 方法5: 尋找最長的文字內容區塊
+            all_divs = soup.find_all("div")
+            max_text_length = 0
+            max_text_content = ""
+            for div in all_divs:
+                text_content = div.get_text(strip=True)
+                if len(text_content) > max_text_length:
+                    max_text_length = len(text_content)
+                    max_text_content = text_content
+
+            driver.quit()
+            return max_text_content if max_text_length > 100 else "No content found"
 
 
         for article in self.articles_data["articles"]:
