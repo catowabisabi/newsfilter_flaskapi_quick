@@ -138,7 +138,9 @@ class NewsfilterApi:
             published_at = article.get("publishedAt")
             if published_at:
                 try:
-                    pub_date = datetime.fromisoformat(published_at.replace("Z", "+00:00")).date()
+                    # 將 "Z" 改成 "+00:00"，將 "+0000" 改成 "+00:00"
+                    ts = published_at.replace("Z", "+00:00").replace("+0000", "+00:00")
+                    pub_date = datetime.fromisoformat(ts).date()
                     if start_date <= pub_date <= end_date:
                         filtered.append(article)
                 except Exception as e:
