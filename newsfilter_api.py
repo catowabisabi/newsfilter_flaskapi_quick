@@ -10,6 +10,8 @@ from selenium.webdriver.chrome.options import Options
 import time
 from bs4 import BeautifulSoup
 from lxml import etree
+import tempfile
+from login import NewsfilterLogin
 
 
 
@@ -32,28 +34,25 @@ class NewsfilterApi:
         }
 
     def login(self):
-        payload = {
-            "type": "refreshTokens",
-            "refreshToken": self.refresh_token
-        }
-        headers = {
-            "Content-Type": "application/json"
-        }
-        response = requests.post(self.token_refresh_url, json=payload, headers=headers)
+        login_client = NewsfilterLogin()
+        access_token, refresh_token = login_client.login()
         
-        if response.status_code == 200:
-            tokens = response.json()
-            self.access_token = tokens.get("accessToken")
-            self.refresh_token = tokens.get("refreshToken")
-
-            # 更新 .env 檔案內容
+        if access_token and refresh_token:
+            self.access_token = access_token
+            self.refresh_token = refresh_token
+            
+            # 更新 headers
+            self.headers["Authorization"] = f"Bearer {self.access_token}"
+            
+            # 更新 .env 檔案
             self._update_env_token("ACCESS_TOKEN", self.access_token)
             self._update_env_token("REFRESH_TOKEN", self.refresh_token)
-
+            
             self.last_refresh_time = time.time()
-            print("🔁 Token refreshed successfully.")
+            print("🔁 Login successful.")
+            return True
         else:
-            raise Exception(f"❌ Failed to refresh token: {response.status_code} {response.text}")
+            raise Exception("❌ Login failed: Could not obtain tokens")
 
     def get_access_token(self):
         # 如果 access token 太舊（假設 12 小時），就 refresh
@@ -66,23 +65,31 @@ class NewsfilterApi:
         return self.refresh_token
 
     def _update_env_token(self, key, value):
-        # 更新 .env 檔案內容
-        print(f"🔍 更新 .env 檔案內容: {key} = {value}")
-        print("這功能沒有實作")
-        pass
-        """ lines = []
-        updated = False
-        with open(self.token_file, "r") as f:
-            for line in f:
-                if line.startswith(f"{key}="):
-                    lines.append(f"{key}={value}\n")
-                    updated = True
-                else:
-                    lines.append(line)
-        if not updated:
-            lines.append(f"{key}={value}\n")
-        with open(self.token_file, "w") as f:
-            f.writelines(lines) """
+        try:
+            lines = []
+            updated = False
+            
+            # 讀取現有的 .env 文件
+            if os.path.exists(self.token_file):
+                with open(self.token_file, "r") as f:
+                    for line in f:
+                        if line.startswith(f"{key}="):
+                            lines.append(f"{key}={value}\n")
+                            updated = True
+                        else:
+                            lines.append(line)
+            
+            # 如果 key 不存在，添加新的
+            if not updated:
+                lines.append(f"{key}={value}\n")
+            
+            # 寫入更新後的內容
+            with open(self.token_file, "w") as f:
+                f.writelines(lines)
+            
+            print(f"✅ Updated {key} in {self.token_file}")
+        except Exception as e:
+            print(f"❌ Failed to update {self.token_file}: {str(e)}")
     
     def get_articles_by_symbol(self, symbol: str):
         print(f"🔍 正在獲取 {symbol} 相關文章...")
@@ -186,9 +193,15 @@ class NewsfilterApi:
             options = Options()
             options.add_argument('--headless')  # 無頭
             options.add_argument('--disable-gpu')
-            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                      "(KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36")
             
+            tmp_profile = tempfile.mkdtemp()
+            options.add_argument(f'--user-data-dir={tmp_profile}')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-blink-features=AutomationControlled')
 
 
             driver = webdriver.Chrome(options=options, seleniumwire_options=seleniumwire_options)
